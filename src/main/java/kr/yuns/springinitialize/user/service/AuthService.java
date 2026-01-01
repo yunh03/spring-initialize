@@ -16,13 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +33,9 @@ public class AuthService {
 
     public User getUserEntity(String email) {
         User user = userRepository.findByEmail(email);
+        log.info("[getUserEntity] 사용자 조회 시도: {}", email);
         if (user == null) {
+            log.error("[getUserEntity] 사용자 조회 실패: {}", email);
             throw new UserNotFoundException();
         } else {
             return user;
@@ -45,6 +46,14 @@ public class AuthService {
         if(!passwordEncoder.matches(originalPassword, password)) {
             throw new PasswordInvalidException();
         }
+    }
+
+    private Authentication createAuthentication(User user) {
+        List<SimpleGrantedAuthority> authorities = Collections.singletonList(
+                new SimpleGrantedAuthority(user.getRole().getValue())
+        );
+
+        return new UsernamePasswordAuthenticationToken(user.getEmail(), null, authorities);
     }
 
     public GlobalResponse<TokenResponseDto> signUp(SignUpRequestDto signUpRequestDto) {
@@ -58,13 +67,13 @@ public class AuthService {
 
         try {
             userRepository.save(user);
+            log.info("[signUp] 새로운 사용자 등록: {}", user.getEmail());
         } catch (DataIntegrityViolationException e) {
-            log.error("중복된 이메일 주소: {}", signUpRequestDto.getEmail());
+            log.error("[signUp] 중복된 이메일 주소로 인한 가입 거부: {}", signUpRequestDto.getEmail());
             throw new EmailDuplicationException();
         }
 
-        Authentication authentication = new UsernamePasswordAuthenticationToken(user.getEmail(), null,
-                asList(new SimpleGrantedAuthority(user.getRole().getValue())));
+        Authentication authentication = createAuthentication(user);
         AuthenticationToken authenticationToken = tokenProvider.generateToken(authentication);
 
         return GlobalResponse.ok(
@@ -78,8 +87,7 @@ public class AuthService {
         User user = getUserEntity(signInRequestDto.getEmail());
         validatePassword(signInRequestDto.getPassword(), user.getPassword());
 
-        Authentication authentication = new UsernamePasswordAuthenticationToken(user.getEmail(), null,
-                asList(new SimpleGrantedAuthority(user.getRole().getValue())));
+        Authentication authentication = createAuthentication(user);
         AuthenticationToken authenticationToken = tokenProvider.generateToken(authentication);
 
         return GlobalResponse.ok(
@@ -87,9 +95,5 @@ public class AuthService {
                         .accessToken(authenticationToken.getAccessToken())
                         .refreshToken(authenticationToken.getRefreshToken())
                         .build());
-    }
-
-    private Collection<? extends GrantedAuthority> asList(SimpleGrantedAuthority simpleGrantedAuthority) {
-        return Collections.singletonList(simpleGrantedAuthority);
     }
 }

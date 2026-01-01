@@ -34,11 +34,11 @@ public class JwtTokenProvider {
 
     // AT 만료 시간
     @Value("${jwt.access-token.expire-time}")
-    private long accessTokenExpireTime;
+    private long ACCESS_TOKEN_EXPIRE_TIME;
 
     // RT 만료 시간
     @Value("${jwt.refresh-token.expire-time}")
-    private long refreshTokenExpireTime;
+    private long REFRESH_TOKEN_EXPIRE_TIME;
 
     public JwtTokenProvider(@Value("${jwt.secret}") String secretKey,
                             RedisService redisService,
@@ -49,32 +49,37 @@ public class JwtTokenProvider {
         this.userRepository = userRepository;
     }
 
-    private String generateToken(String username, String authorities, Date expireDate) {
-        return Jwts.builder()
-                .setSubject(username)
-                .claim("auth", authorities)
+    private String createToken(String email, String authorities, Date expireDate) {
+        log.info("[createToken] 새 JWT 발급 됨: {}", email);
+        JwtBuilder builder = Jwts.builder()
+                .setSubject(email)
                 .setExpiration(expireDate)
-                .signWith(key, SignatureAlgorithm.HS256)
-                .compact();
+                .signWith(key, SignatureAlgorithm.HS256);
+
+        if(authorities != null && !authorities.isEmpty()) {
+            builder.claim("authorities", authorities);
+        }
+
+        return builder.compact();
     }
 
     public AuthenticationToken generateToken(Authentication authentication) {
+        String username = authentication.getName();
+
+        log.info("[generateToken] 새 JWT 발급 시도: {}", username);
+
         String authorities = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.joining(","));
 
         long now = (new Date()).getTime();
-        String username = authentication.getName();
 
-        Date accessTokenExpire = new Date(now + accessTokenExpireTime);
-        String accessToken = generateToken(username, authorities, accessTokenExpire);
+        String accessToken = createToken(username, authorities, new Date(now + ACCESS_TOKEN_EXPIRE_TIME));
+        String refreshToken = createToken(username, null, new Date(now + REFRESH_TOKEN_EXPIRE_TIME));
 
-        Date refreshTokenExpire = new Date(now + refreshTokenExpireTime);
-        String refreshToken = generateToken(username, authorities, refreshTokenExpire);
+        log.info("[generateToken] 발급된 Refresh Token이 Redis에 저장 됨");
+        redisService.setValues(username, refreshToken, Duration.ofMillis(REFRESH_TOKEN_EXPIRE_TIME));
 
-        redisService.setValues(username, refreshToken, Duration.ofMillis(refreshTokenExpireTime));
-
-        log.info("신규 JWT 생성: {}", username);
         return AuthenticationToken.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
@@ -83,32 +88,22 @@ public class JwtTokenProvider {
 
     public Authentication getAuthentication(String accessToken) {
         Claims claims = parseClaims(accessToken);
+        Object authClaim = claims.get("authorities");
 
         Collection<? extends GrantedAuthority> authorities;
-        if (claims.get("auth") == null || claims.get("auth").toString().isEmpty()) {
+
+        if (authClaim == null || authClaim.toString().isEmpty()) {
             User user = userRepository.findByEmail(claims.getSubject());
-            if (user != null) {
-                authorities = List.of(new SimpleGrantedAuthority(user.getRole().getValue()));
-            } else {
-                authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
-            }
+            String role = (user != null) ? user.getRole().getValue() : "ROLE_USER";
+            authorities = List.of(new SimpleGrantedAuthority(role));
         } else {
-            authorities = Arrays.stream(claims.get("auth").toString().split(","))
-                    .filter(auth -> !auth.trim().isEmpty())
+            authorities = Arrays.stream(authClaim.toString().split(","))
                     .map(SimpleGrantedAuthority::new)
                     .collect(Collectors.toList());
-
-            if (authorities.isEmpty()) {
-                User user = userRepository.findByEmail(claims.getSubject());
-                if (user != null) {
-                    authorities = List.of(new SimpleGrantedAuthority(user.getRole().getValue()));
-                } else {
-                    authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
-                }
-            }
         }
 
-        UserDetails principal = new org.springframework.security.core.userdetails.User(claims.getSubject(), "", authorities);
+        UserDetails principal = new org.springframework.security.core.userdetails.User(claims.getSubject(),
+                "", authorities);
         return new UsernamePasswordAuthenticationToken(principal, "", authorities);
     }
 
@@ -133,16 +128,16 @@ public class JwtTokenProvider {
 
             return true;
         } catch (SecurityException | MalformedJwtException e) {
-            log.warn("유효하지 않은 JWT", e);
+            log.error("[validateToken] 유효하지 않은 JWT 인증 요청: {}", e.getMessage());
             throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         } catch (ExpiredJwtException e) {
-            log.warn("만료된 JWT", e);
+            log.warn("[validateToken] 만료된 JWT 인증 요청: {}", e.getMessage());
             throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         } catch (UnsupportedJwtException e) {
-            log.warn("지원되지 않는 JWT", e);
+            log.warn("[validateToken] 지원되지 않는 JWT 인증 요청: {}", e.getMessage());
             throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         } catch (IllegalArgumentException e) {
-            log.warn("JWT가 제출되지 않음", e);
+            log.warn("[validateToken] JWT가 제출되지 않음: {}", e.getMessage());
             throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         }
     }
