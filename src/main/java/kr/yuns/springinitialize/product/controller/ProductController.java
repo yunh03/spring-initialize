@@ -5,6 +5,7 @@ import kr.yuns.springinitialize.common.security.SecurityUtil;
 import kr.yuns.springinitialize.product.data.dto.ProductRequestDto;
 import kr.yuns.springinitialize.product.data.dto.ProductResponseDto;
 import kr.yuns.springinitialize.product.service.ProductService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,12 +15,12 @@ import org.springframework.web.bind.annotation.*;
 public class ProductController {
     private final ProductService productService;
 
-    @PostMapping("/")
-    public GlobalResponse<Void> createProduct(@RequestBody ProductRequestDto productRequestDto) {
+    @PostMapping
+    public GlobalResponse<Void> createProduct(@Valid @RequestBody ProductRequestDto productRequestDto) {
         return productService.createProduct(SecurityUtil.getUsername(), productRequestDto);
     }
 
-    @GetMapping("/")
+    @GetMapping
     public GlobalResponse<ProductResponseDto> getProduct(@RequestParam Long id) {
         return productService.getProduct(id);
     }

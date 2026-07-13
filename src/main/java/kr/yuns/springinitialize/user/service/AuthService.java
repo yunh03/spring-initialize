@@ -19,6 +19,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -31,15 +32,14 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
 
+    @Transactional(readOnly = true)
     public User getUserEntity(String email) {
-        User user = userRepository.findByEmail(email);
         log.info("[getUserEntity] 사용자 조회 시도: {}", email);
-        if (user == null) {
-            log.error("[getUserEntity] 사용자 조회 실패: {}", email);
-            throw new UserNotFoundException();
-        } else {
-            return user;
-        }
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.error("[getUserEntity] 사용자 조회 실패: {}", email);
+                    return new UserNotFoundException();
+                });
     }
 
     private void validatePassword(String originalPassword, String password) {
@@ -56,6 +56,7 @@ public class AuthService {
         return new UsernamePasswordAuthenticationToken(user.getEmail(), null, authorities);
     }
 
+    @Transactional
     public GlobalResponse<TokenResponseDto> signUp(SignUpRequestDto signUpRequestDto) {
         User user = User.builder()
                 .email(signUpRequestDto.getEmail())

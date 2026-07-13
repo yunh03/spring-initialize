@@ -1,12 +1,16 @@
 package kr.yuns.springinitialize.common.security;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtBuilder;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import kr.yuns.springinitialize.common.response.ErrorCode;
+import io.jsonwebtoken.security.SignatureException;
 import kr.yuns.springinitialize.common.redis.RedisService;
-import kr.yuns.springinitialize.common.security.exception.JwtAuthenticationException;
-import kr.yuns.springinitialize.user.data.entity.User;
+import kr.yuns.springinitialize.user.data.enums.UserRole;
 import kr.yuns.springinitialize.user.data.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +21,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
@@ -28,7 +32,7 @@ import java.util.stream.Collectors;
 @Component
 @Slf4j
 public class JwtTokenProvider {
-    private final Key key;
+    private final SecretKey key;
     private final RedisService redisService;
     private final UserRepository userRepository;
 
@@ -52,11 +56,11 @@ public class JwtTokenProvider {
     private String createToken(String email, String authorities, Date expireDate) {
         log.info("[createToken] 새 JWT 발급 됨: {}", email);
         JwtBuilder builder = Jwts.builder()
-                .setSubject(email)
-                .setExpiration(expireDate)
-                .signWith(key, SignatureAlgorithm.HS256);
+                .subject(email)
+                .expiration(expireDate)
+                .signWith(key, Jwts.SIG.HS256);
 
-        if(authorities != null && !authorities.isEmpty()) {
+        if (authorities != null && !authorities.isEmpty()) {
             builder.claim("authorities", authorities);
         }
 
@@ -93,8 +97,9 @@ public class JwtTokenProvider {
         Collection<? extends GrantedAuthority> authorities;
 
         if (authClaim == null || authClaim.toString().isEmpty()) {
-            User user = userRepository.findByEmail(claims.getSubject());
-            String role = (user != null) ? user.getRole().getValue() : "ROLE_USER";
+            String role = userRepository.findByEmail(claims.getSubject())
+                    .map(user -> user.getRole().getValue())
+                    .orElse(UserRole.USER.getValue());
             authorities = List.of(new SimpleGrantedAuthority(role));
         } else {
             authorities = Arrays.stream(authClaim.toString().split(","))
@@ -109,11 +114,11 @@ public class JwtTokenProvider {
 
     private Claims parseClaims(String accessToken) {
         try {
-            return Jwts.parserBuilder()
-                    .setSigningKey(key)
+            return Jwts.parser()
+                    .verifyWith(key)
                     .build()
-                    .parseClaimsJws(accessToken)
-                    .getBody();
+                    .parseSignedClaims(accessToken)
+                    .getPayload();
         } catch (ExpiredJwtException e) {
             return e.getClaims();
         }
@@ -121,24 +126,20 @@ public class JwtTokenProvider {
 
     public boolean validateToken(String token) {
         try {
-            Jwts.parserBuilder()
-                    .setSigningKey(key)
+            Jwts.parser()
+                    .verifyWith(key)
                     .build()
-                    .parseClaimsJws(token);
-
+                    .parseSignedClaims(token);
             return true;
-        } catch (SecurityException | MalformedJwtException e) {
-            log.error("[validateToken] 유효하지 않은 JWT 인증 요청: {}", e.getMessage());
-            throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
+        } catch (SignatureException | MalformedJwtException e) {
+            log.warn("[validateToken] 유효하지 않은 JWT 서명 요청: {}", e.getMessage());
         } catch (ExpiredJwtException e) {
             log.warn("[validateToken] 만료된 JWT 인증 요청: {}", e.getMessage());
-            throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         } catch (UnsupportedJwtException e) {
             log.warn("[validateToken] 지원되지 않는 JWT 인증 요청: {}", e.getMessage());
-            throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         } catch (IllegalArgumentException e) {
             log.warn("[validateToken] JWT가 제출되지 않음: {}", e.getMessage());
-            throw new JwtAuthenticationException(ErrorCode.TOKEN_INVALID);
         }
+        return false;
     }
 }

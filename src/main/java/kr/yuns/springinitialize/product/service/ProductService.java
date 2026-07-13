@@ -10,9 +10,9 @@ import kr.yuns.springinitialize.user.data.entity.User;
 import kr.yuns.springinitialize.user.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -21,15 +21,11 @@ public class ProductService {
     private final AuthService authService;
 
     private Product getProductEntity(Long id) {
-        Optional<Product> product = productRepository.findById(id);
-
-        if(product.isPresent()) {
-            return product.get();
-        } else {
-            throw new ProductNotFoundException();
-        }
+        return productRepository.findById(id)
+                .orElseThrow(ProductNotFoundException::new);
     }
 
+    @Transactional
     public GlobalResponse<Void> createProduct(String email, ProductRequestDto productRequestDto) {
         User user = authService.getUserEntity(email);
 
@@ -45,6 +41,7 @@ public class ProductService {
         return GlobalResponse.ok();
     }
 
+    @Transactional(readOnly = true)
     public GlobalResponse<ProductResponseDto> getProduct(Long id) {
         Product product = getProductEntity(id);
 

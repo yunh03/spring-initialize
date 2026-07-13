@@ -1,10 +1,12 @@
 package kr.yuns.springinitialize.user.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import kr.yuns.springinitialize.common.response.GlobalResponse;
 import kr.yuns.springinitialize.user.data.dto.request.SignInRequestDto;
 import kr.yuns.springinitialize.user.data.dto.request.SignUpRequestDto;
 import kr.yuns.springinitialize.user.data.dto.response.TokenResponseDto;
 import kr.yuns.springinitialize.user.service.AuthService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,12 +20,14 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/signup")
-    public GlobalResponse<TokenResponseDto> signUp(@RequestBody SignUpRequestDto signUpRequestDto) {
+    @Operation(summary = "사용자 회원가입")
+    public GlobalResponse<TokenResponseDto> signUp(@Valid @RequestBody SignUpRequestDto signUpRequestDto) {
         return authService.signUp(signUpRequestDto);
     }
 
     @PostMapping("/signin")
-    public GlobalResponse<TokenResponseDto> signIn(@RequestBody SignInRequestDto signInRequestDto) {
+    @Operation(summary = "사용자 로그인")
+    public GlobalResponse<TokenResponseDto> signIn(@Valid @RequestBody SignInRequestDto signInRequestDto) {
         return authService.signIn(signInRequestDto);
     }
 }
