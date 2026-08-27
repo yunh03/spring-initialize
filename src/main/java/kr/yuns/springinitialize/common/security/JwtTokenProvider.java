@@ -32,6 +32,12 @@ import java.util.stream.Collectors;
 @Component
 @Slf4j
 public class JwtTokenProvider {
+    public static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    private static final String BLACKLIST_KEY_PREFIX = "blacklist:";
+    private static final String BLACKLIST_VALUE = "logout";
+
     private final SecretKey key;
     private final RedisService redisService;
     private final UserRepository userRepository;
@@ -90,6 +96,35 @@ public class JwtTokenProvider {
                 .build();
     }
 
+    public String resolveToken(String bearerToken) {
+        if (bearerToken != null && bearerToken.startsWith(BEARER_PREFIX)) {
+            return bearerToken.substring(BEARER_PREFIX.length());
+        }
+        return null;
+    }
+
+    public void invalidateToken(String accessToken) {
+        Claims claims = parseClaims(accessToken);
+        String username = claims.getSubject();
+
+        redisService.deleteValues(username);
+        log.info("[invalidateToken] 저장된 Refresh Token이 Redis에서 삭제 됨: {}", username);
+
+        long remainingTime = claims.getExpiration().getTime() - System.currentTimeMillis();
+        if (remainingTime <= 0) {
+            log.info("[invalidateToken] 이미 만료된 Access Token이라 블랙리스트 등록 생략: {}", username);
+            return;
+        }
+
+        redisService.setValues(BLACKLIST_KEY_PREFIX + accessToken, BLACKLIST_VALUE,
+                Duration.ofMillis(remainingTime));
+        log.info("[invalidateToken] Access Token이 블랙리스트에 등록 됨: {} (남은 시간: {}ms)", username, remainingTime);
+    }
+
+    public boolean isBlacklisted(String accessToken) {
+        return redisService.hasKey(BLACKLIST_KEY_PREFIX + accessToken);
+    }
+
     public Authentication getAuthentication(String accessToken) {
         Claims claims = parseClaims(accessToken);
         Object authClaim = claims.get("authorities");
@@ -130,6 +165,12 @@ public class JwtTokenProvider {
                     .verifyWith(key)
                     .build()
                     .parseSignedClaims(token);
+
+            if (isBlacklisted(token)) {
+                log.warn("[validateToken] 로그아웃 처리된 JWT 인증 요청");
+                return false;
+            }
+
             return true;
         } catch (SignatureException | MalformedJwtException e) {
             log.warn("[validateToken] 유효하지 않은 JWT 서명 요청: {}", e.getMessage());

@@ -8,7 +8,9 @@ import kr.yuns.springinitialize.user.data.dto.response.TokenResponseDto;
 import kr.yuns.springinitialize.user.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,5 +31,11 @@ public class AuthController {
     @Operation(summary = "사용자 로그인")
     public GlobalResponse<TokenResponseDto> signIn(@Valid @RequestBody SignInRequestDto signInRequestDto) {
         return authService.signIn(signInRequestDto);
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "사용자 로그아웃")
+    public GlobalResponse<Void> logout(@RequestHeader(HttpHeaders.AUTHORIZATION) String bearerToken) {
+        return authService.logout(bearerToken);
     }
 }

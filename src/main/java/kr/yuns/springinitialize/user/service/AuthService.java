@@ -3,6 +3,7 @@ package kr.yuns.springinitialize.user.service;
 import kr.yuns.springinitialize.common.response.GlobalResponse;
 import kr.yuns.springinitialize.common.security.AuthenticationToken;
 import kr.yuns.springinitialize.common.security.JwtTokenProvider;
+import kr.yuns.springinitialize.common.security.exception.TokenInvalidException;
 import kr.yuns.springinitialize.user.data.dto.request.SignInRequestDto;
 import kr.yuns.springinitialize.user.data.dto.request.SignUpRequestDto;
 import kr.yuns.springinitialize.user.data.dto.response.TokenResponseDto;
@@ -96,5 +97,19 @@ public class AuthService {
                         .accessToken(authenticationToken.getAccessToken())
                         .refreshToken(authenticationToken.getRefreshToken())
                         .build());
+    }
+
+    public GlobalResponse<Void> logout(String bearerToken) {
+        String accessToken = tokenProvider.resolveToken(bearerToken);
+
+        if (accessToken == null || !tokenProvider.validateToken(accessToken)) {
+            log.error("[logout] 유효하지 않은 Access Token으로 로그아웃 시도");
+            throw new TokenInvalidException();
+        }
+
+        tokenProvider.invalidateToken(accessToken);
+        log.info("[logout] 로그아웃 처리 완료");
+
+        return GlobalResponse.ok();
     }
 }
